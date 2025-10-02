@@ -1,6 +1,6 @@
 # 🔐 Mr. Decoder
 
-A simple, clean web-based encryption and decryption tool with dark mode support.
+A simple, clean web-based encryption and decryption tool.
 
 ## ✨ Features
 
