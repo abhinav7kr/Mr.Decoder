@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mr. Decoder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        textarea::-webkit-scrollbar{width:8px}
+        textarea::-webkit-scrollbar-thumb{border-radius:4px}
+        .dark textarea::-webkit-scrollbar-thumb{background:#4a5568}
+        .dark textarea::-webkit-scrollbar-track{background:#1a202c}
+        .light textarea::-webkit-scrollbar-thumb{background:#a0aec0}
+        .light textarea::-webkit-scrollbar-track{background:#f7fafc}
+    </style>
+    <script>
+        function setupTheme(){
+            const html=document.documentElement;const btn=document.getElementById('themeToggle');
+            const apply=(dark)=>{if(dark){html.classList.add('dark')}else{html.classList.remove('dark')}btn.textContent=dark?'☀️':'🌙';btn.title=dark?'Switch to Light':'Switch to Dark'};
+            const saved=localStorage.getItem('color-theme');const prefers=window.matchMedia('(prefers-color-scheme: dark)').matches;const dark=saved?saved==='dark':prefers;apply(dark);
+            btn.onclick=()=>{const now=!html.classList.contains('dark');localStorage.setItem('color-theme',now?'dark':'light');apply(now)}
+        }
+
+        function notify(msg,type='info'){
+            const c=document.getElementById('toasts');
+            const colors={success:'bg-green-600',error:'bg-red-600',info:'bg-blue-600'};
+            const n=document.createElement('div');
+            n.className=`px-3 py-2 rounded text-white shadow ${colors[type]} opacity-0 translate-y-2 transition`;
+            n.textContent=msg;c.appendChild(n);
+            requestAnimationFrame(()=>{n.classList.remove('opacity-0','translate-y-2')});
+            setTimeout(()=>{n.classList.add('opacity-0');setTimeout(()=>n.remove(),200)},3000)
+        }
+
+        function togglePasswordField(){
+            const type=document.getElementById('encryptionType').value;
+            document.getElementById('passwordWrap').classList.toggle('hidden',type!=='aes')
+        }
+
+        function encryptText(){
+            const input=document.getElementById('inputText').value;const type=document.getElementById('encryptionType').value;const pw=document.getElementById('password').value;
+            if(!input){notify('Enter text first','error');return}
+            try{
+                let out='';
+                if(type==='aes'){
+                    if(!pw){notify('Password required for AES','error');return}
+                    out=CryptoJS.AES.encrypt(input,pw).toString();
+                }else if(type==='sha256'){
+                    out=CryptoJS.SHA256(input).toString();
+                }else if(type==='sha512'){
+                    out=CryptoJS.SHA512(input).toString();
+                }else if(type==='base64'){
+                    out=btoa(input);
+                }
+                document.getElementById('resultText').value=out;notify('Done','success');
+            }catch(e){notify('Encryption failed','error')}
+        }
+
+        function decryptText(){
+            const input=document.getElementById('inputText').value;const type=document.getElementById('encryptionType').value;const pw=document.getElementById('password').value;
+            if(!input){notify('Enter text first','error');return}
+            try{
+                let out='';
+                if(type==='aes'){
+                    if(!pw){notify('Password required for AES','error');return}
+                    const bytes=CryptoJS.AES.decrypt(input,pw);out=bytes.toString(CryptoJS.enc.Utf8);if(!out) throw new Error('bad')
+                }else if(type==='base64'){
+                    out=atob(input);
+                }else{notify('Hashes cannot be decrypted','error');return}
+                document.getElementById('resultText').value=out;notify('Done','success');
+            }catch(e){notify('Decryption failed','error')}
+        }
+
+        async function copyResult(){
+            const val=document.getElementById('resultText').value; if(!val){notify('Nothing to copy','info');return}
+            try{await navigator.clipboard.writeText(val);notify('Copied','success')}catch(_){
+                const ta=document.getElementById('resultText');ta.select();document.execCommand('copy');notify('Copied','success')
+            }
+        }
+
+        function downloadResult(){
+            const val=document.getElementById('resultText').value;if(!val){notify('Nothing to download','info');return}
+            const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([val],{type:'text/plain'}));a.download='result.txt';document.body.appendChild(a);a.click();a.remove();notify('Download started','success')
+        }
+
+        function generateQR(){
+            const val=document.getElementById('resultText').value;const box=document.getElementById('qrcode');
+            box.innerHTML=''; if(!val){notify('Nothing to encode','info');return}
+            new QRCode(box,{text:val,width:128,height:128,colorDark:document.documentElement.classList.contains('dark')?'#ffffff':'#111827',colorLight:document.documentElement.classList.contains('dark')?'#111827':'#ffffff',correctLevel:QRCode.CorrectLevel.H});
+            notify('QR generated','success')
+        }
+
+        function toggleFilePassword(){
+            const method=document.getElementById('fileMethod').value;document.getElementById('filePasswordWrap').classList.toggle('hidden',!(method==='aes'||method==='xor'))
+        }
+
+        function downloadBlob(blob,filename){
+            const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove()
+        }
+
+        function encryptFile(){
+            const method=document.getElementById('fileMethod').value;const pw=document.getElementById('filePassword').value;const inp=document.getElementById('fileInput');
+            if(!inp.files.length){notify('Choose a file','error');return}
+            const f=inp.files[0];const r=new FileReader();
+            r.onload=(e)=>{
+                try{
+                    const buf=e.target.result;let blob;
+                    if(method==='aes'){
+                        if(!pw){notify('Password required for AES','error');return}
+                        const wa=CryptoJS.lib.WordArray.create(buf);const out=CryptoJS.AES.encrypt(wa,pw).toString();blob=new Blob([out],{type:'text/plain;charset=utf-8'})
+                    }else if(method==='base64'){
+                        const b64=btoa(String.fromCharCode(...new Uint8Array(buf)));blob=new Blob([b64],{type:'text/plain;charset=utf-8'})
+                    }else if(method==='xor'){
+                        if(!pw){notify('Password required for XOR','error');return}
+                        const bytes=new Uint8Array(buf);for(let i=0;i<bytes.length;i++){bytes[i]^=pw.charCodeAt(i%pw.length)} blob=new Blob([bytes],{type:'application/octet-stream'})
+                    }
+                    downloadBlob(blob,f.name+'.encr');notify('File encrypted','success')
+                }catch(err){notify('File encryption failed','error')}
+            }
+            r.readAsArrayBuffer(f)
+        }
+
+        function decryptFile(){
+            const method=document.getElementById('fileMethod').value;const pw=document.getElementById('filePassword').value;const inp=document.getElementById('fileInput');
+            if(!inp.files.length){notify('Choose a file','error');return}
+            const f=inp.files[0];const r=new FileReader();
+            r.onload=(e)=>{
+                try{
+                    let blob;
+                    if(method==='aes'){
+                        if(!pw){notify('Password required for AES','error');return}
+                        const decrypted=CryptoJS.AES.decrypt(e.target.result,pw);if(decrypted.sigBytes<=0) throw new Error('bad');
+                        const words=decrypted.words;const sig=decrypted.sigBytes;const u8=new Uint8Array(sig);for(let i=0;i<sig;i++){u8[i]=(words[i>>>2]>>> (24- (i%4)*8))&255} blob=new Blob([u8],{type:'application/octet-stream'})
+                    }else if(method==='base64'){
+                        const bin=atob(e.target.result);const u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);blob=new Blob([u8],{type:'application/octet-stream'})
+                    }else if(method==='xor'){
+                        if(!pw){notify('Password required for XOR','error');return}
+                        const u8=new Uint8Array(e.target.result);for(let i=0;i<u8.length;i++)u8[i]^=pw.charCodeAt(i%pw.length);blob=new Blob([u8],{type:'application/octet-stream'})
+                    }
+                    const name=f.name.replace(/\.encr$/,'')||'decrypted_file';downloadBlob(blob,name);notify('File decrypted','success')
+                }catch(err){notify('File decryption failed','error')}
+            }
+            if(method==='aes'||method==='base64'){r.readAsText(f)}else{r.readAsArrayBuffer(f)}
+        }
+
+        window.addEventListener('DOMContentLoaded',()=>{
+            setupTheme();togglePasswordField();toggleFilePassword();
+        })
+    </script>
+</head>
+<body class="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+    <div class="max-w-5xl mx-auto p-4 sm:p-6">
+        <header class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-indigo-600 dark:text-indigo-400">MR. DECODER</h1>
+            <button id="themeToggle" class="h-10 w-10 grid place-items-center rounded-full bg-gray-200 dark:bg-gray-700"></button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow">
+                <h2 class="text-lg font-semibold mb-4">Text</h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-sm text-gray-600 dark:text-gray-400">Method</label>
+                        <select id="encryptionType" onchange="togglePasswordField()" class="mt-1 w-full p-2 rounded border bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600">
+                            <option value="aes">AES</option>
+                            <option value="sha256">SHA-256</option>
+                            <option value="sha512">SHA-512</option>
+                            <option value="base64">Base64</option>
+                        </select>
+                    </div>
+                    <div id="passwordWrap" class="hidden">
+                        <input id="password" type="password" placeholder="Password (AES)" class="w-full p-2 rounded border bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                    </div>
+                    <div>
+                        <textarea id="inputText" placeholder="Input" class="w-full h-28 p-3 rounded border bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 resize-none"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="encryptText()" class="px-3 py-2 rounded bg-indigo-600 text-white">Encrypt</button>
+                        <button onclick="decryptText()" class="px-3 py-2 rounded bg-green-600 text-white">Decrypt</button>
+                    </div>
+                    <div>
+                        <textarea id="resultText" readonly placeholder="Result" class="w-full h-32 p-3 rounded border bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 resize-none"></textarea>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="copyResult()" class="px-3 py-2 rounded bg-yellow-500 text-white">Copy</button>
+                        <button onclick="downloadResult()" class="px-3 py-2 rounded bg-blue-600 text-white">Download</button>
+                        <button onclick="generateQR()" class="px-3 py-2 rounded bg-rose-600 text-white">QR</button>
+                    </div>
+                    <div id="qrcode" class="flex justify-center items-center h-36 rounded border border-dashed border-gray-300 dark:border-gray-600"></div>
+                </div>
+            </section>
+
+            <section class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow">
+                <h2 class="text-lg font-semibold mb-4">File</h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-sm text-gray-600 dark:text-gray-400">Method</label>
+                        <select id="fileMethod" onchange="toggleFilePassword()" class="mt-1 w-full p-2 rounded border bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600">
+                            <option value="aes">AES</option>
+                            <option value="base64">Base64</option>
+                            <option value="xor">XOR</option>
+                        </select>
+                    </div>
+                    <div id="filePasswordWrap">
+                        <input id="filePassword" type="password" placeholder="Password (AES/XOR)" class="w-full p-2 rounded border bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600" />
+                    </div>
+                    <input id="fileInput" type="file" class="block w-full text-sm file:mr-3 file:px-3 file:py-2 file:rounded-full file:border-0 file:bg-green-600 file:text-white file:cursor-pointer" />
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="encryptFile()" class="px-3 py-2 rounded bg-indigo-600 text-white">Encrypt File</button>
+                        <button onclick="decryptFile()" class="px-3 py-2 rounded bg-green-600 text-white">Decrypt File</button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div id="toasts" class="fixed top-4 left-1/2 -translate-x-1/2 space-y-2 z-50"></div>
+    </div>
+</body>
+</html>
+
+
