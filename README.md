@@ -1,6 +1,7 @@
 # 🔐 Mr. Decoder
 
 A simple, clean web-based encryption and decryption tool.
+My 4th semester mini project.
 
 ## ✨ Features
 
